@@ -1,7 +1,8 @@
 # kubernetes-event-exporter
 
-> **Note**: This is an active fork of [Opsgenie Kubernetes Event Exporter](https://github.com/opsgenie/kubernetes-event-exporter)
-since that is not maintained since November 2021. Development is sponsored by [Resmo](https://www.resmo.com).
+> **Note**: This version of kubernetes-event-exporter's support [Fluentd data collector](https://docs.fluentd.org/)
+
+> **Note**: This is a fork of  [Resmo Kubernetes Event Exporter](https://github.com/resmoio/kubernetes-event-exporter) which is an active fork of [Opsgenie Kubernetes Event Exporter](https://github.com/opsgenie/kubernetes-event-exporter) since that is not maintained since November 2021. Development is sponsored by [Resmo](https://www.resmo.com).
 
 > This tool is presented at [KubeCon 2019 San Diego](https://kccncna19.sched.com/event/6aa61eca397e4ff2bdbb2845e5aebb81).
 
