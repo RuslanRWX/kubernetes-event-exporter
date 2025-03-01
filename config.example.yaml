@@ -122,3 +122,13 @@ receivers:
       deliveryStreamName: "kubernetes-events"
       region: "us-east-1"
       deDot: true
+  - name: "fluent"
+    fluent:
+      host: "localhost"
+      port: 5500
+      tag: "kube-event"
+      bufferSize: 1048576
+      # If set to true, all dots in labels and annotation keys are replaced by underscores. Defaults false
+      deDot: true|false
+      layout: # Optional
+
