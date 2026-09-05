@@ -1,0 +1,13 @@
+# Keep the build context small. .git is deliberately NOT excluded: the build
+# stamps vcs.revision into the binary via Go's buildvcs, which powers the
+# event_exporter_build_info metric.
+.idea/
+.DS_Store
+/kubernetes-event-exporter
+.github/
+deploy/
+*.md
+LICENSE
+kustomization.yaml
+config.yaml
+config.example.yaml

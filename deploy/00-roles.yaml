@@ -4,6 +4,58 @@ metadata:
   namespace: monitoring
   name: event-exporter
 ---
+# The exporter watches Events cluster-wide, and (unless config.omitLookup is true)
+# does a GET on each event's involvedObject to enrich it with labels, annotations
+# and ownerReferences.
+#
+# The resources below are enumerated deliberately. Granting apiGroups: ["*"] with
+# resources: ["*"] hands this ServiceAccount cluster-wide read access to Secrets,
+# which turns any RCE or log-exfiltration bug in the exporter -- or in one of its
+# many sink dependencies -- into a full cluster credential compromise. Events
+# never reference Secrets as their involvedObject, so nothing is lost.
+#
+# If you run with config.omitLookup: true, delete every rule except the "events"
+# one; no object lookups are performed in that mode.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: event-exporter
+rules:
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["get", "watch", "list"]
+  - apiGroups: [""]
+    resources:
+      - pods
+      - nodes
+      - services
+      - endpoints
+      - namespaces
+      - serviceaccounts
+      - persistentvolumes
+      - persistentvolumeclaims
+      - replicationcontrollers
+    verbs: ["get", "list"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+    verbs: ["get", "list"]
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list"]
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["get", "list"]
+  - apiGroups: ["policy"]
+    resources: ["poddisruptionbudgets"]
+    verbs: ["get", "list"]
+  # Required so that the involvedObject lookup can resolve arbitrary kinds to
+  # their REST mapping. Discovery is metadata only; it exposes no object content.
+  - nonResourceURLs: ["/api", "/api/*", "/apis", "/apis/*", "/version"]
+    verbs: ["get"]
+---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
@@ -17,14 +69,28 @@ subjects:
     namespace: monitoring
     name: event-exporter
 ---
+# Leader election only ever touches a single Lease in the exporter's own
+# namespace, so this is a namespaced Role rather than a cluster-wide "*" verb.
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
+kind: Role
 metadata:
-  name: event-exporter
+  name: event-exporter-leader-election
+  namespace: monitoring
 rules:
-- apiGroups: ["*"]
-  resources: ["*"]
-  verbs: ["get", "watch", "list"]
-- apiGroups: ["coordination.k8s.io"]
-  resources: ["leases"]
-  verbs: ["*"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: event-exporter-leader-election
+  namespace: monitoring
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: event-exporter-leader-election
+subjects:
+  - kind: ServiceAccount
+    namespace: monitoring
+    name: event-exporter

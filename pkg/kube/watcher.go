@@ -49,16 +49,27 @@ func NewEventWatcher(config *rest.Config, namespace string, MaxEventAgeSeconds i
 		clientset:           clientset,
 	}
 
-	informer.AddEventHandler(watcher)
-	informer.SetWatchErrorHandler(func(r *cache.Reflector, err error) {
+	if _, err := informer.AddEventHandler(watcher); err != nil {
+		log.Fatal().Err(err).Msg("cannot register event handler on the informer")
+	}
+	if err := informer.SetWatchErrorHandler(func(r *cache.Reflector, err error) {
 		watcher.metricsStore.WatchErrors.Inc()
-	})
+	}); err != nil {
+		log.Fatal().Err(err).Msg("cannot set watch error handler on the informer")
+	}
 
 	return watcher
 }
 
-func (e *EventWatcher) OnAdd(obj interface{}) {
-	event := obj.(*corev1.Event)
+// OnAdd implements cache.ResourceEventHandler. isInInitialList is true while the
+// informer replays the pre-existing events from its initial LIST; those are
+// filtered by maxEventAgeSeconds in isEventDiscarded like any other event.
+func (e *EventWatcher) OnAdd(obj interface{}, isInInitialList bool) {
+	event, ok := obj.(*corev1.Event)
+	if !ok {
+		log.Error().Msgf("expected a *corev1.Event from the informer, got %T", obj)
+		return
+	}
 	e.onEvent(event)
 }
 
@@ -114,8 +125,11 @@ func (e *EventWatcher) onEvent(event *corev1.Event) {
 		objectMetadata, err := e.objectMetadataCache.GetObjectMetadata(&event.InvolvedObject, e.clientset, e.dynamicClient, e.metricsStore)
 		if err != nil {
 			if errors.IsNotFound(err) {
+				// Routine: events routinely outlive the object they describe
+				// (pod Killing/Deleted events in particular). Logging this at
+				// error level produces a steady stream of false alarms.
 				ev.InvolvedObject.Deleted = true
-				log.Error().Err(err).Msg("Object not found, likely deleted")
+				log.Debug().Err(err).Msg("Object not found, likely deleted")
 			} else {
 				log.Error().Err(err).Msg("Failed to get object metadata")
 			}

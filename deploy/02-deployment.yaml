@@ -5,6 +5,10 @@ metadata:
   namespace: monitoring
 spec:
   replicas: 1
+  selector:
+    matchLabels:
+      app: event-exporter
+      version: v1
   template:
     metadata:
       labels:
@@ -18,28 +22,56 @@ spec:
       serviceAccountName: event-exporter
       securityContext:
         runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
         seccompProfile:
           type: RuntimeDefault
       containers:
         - name: event-exporter
-          # The good practice would be to pin the version. This is just a reference so that we don't
-          # have to update this file in each release.
-          image: ghcr.io/resmoio/kubernetes-event-exporter:latest
+          # Pinned by digest as well as tag: the tag says which build this is,
+          # the digest guarantees every node runs exactly that image even if the
+          # tag is later moved. Rebuild and repin with `make image-push`.
+          image: ruslanrwx/kubernetes-event-exporter:v1.8.1@sha256:bc09b430877f813752f4b6deb9f109d9770c86bca339215a0dd213aa8caa6c19
           imagePullPolicy: IfNotPresent
           args:
             - -conf=/data/config.yaml
+          ports:
+            - name: metrics
+              containerPort: 2112
           volumeMounts:
             - mountPath: /data
               name: cfg
+              readOnly: true
+          # The binary already serves these; wiring them up means a wedged
+          # exporter gets restarted instead of silently shipping nothing.
+          livenessProbe:
+            httpGet:
+              path: /-/healthy
+              port: metrics
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /-/ready
+              port: metrics
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 20m
+              memory: 64Mi
+            limits:
+              # No CPU limit on purpose: throttling the exporter during an event
+              # storm makes it fall behind the watch. Memory is bounded by
+              # cacheSize plus the per-sink queue.
+              memory: 256Mi
           securityContext:
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            privileged: false
             capabilities:
               drop: [ALL]
       volumes:
         - name: cfg
           configMap:
             name: event-exporter-cfg
-  selector:
-    matchLabels:
-      app: event-exporter
-      version: v1

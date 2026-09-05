@@ -5,8 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"regexp"
 	"strings"
 	"time"
@@ -14,7 +12,6 @@ import (
 	opensearch "github.com/opensearch-project/opensearch-go"
 	opensearchapi "github.com/opensearch-project/opensearch-go/opensearchapi"
 	"github.com/resmoio/kubernetes-event-exporter/pkg/kube"
-	"github.com/rs/zerolog/log"
 )
 
 type OpenSearchConfig struct {
@@ -44,9 +41,7 @@ func NewOpenSearch(cfg *OpenSearchConfig) (*OpenSearch, error) {
 		Addresses: cfg.Hosts,
 		Username:  cfg.Username,
 		Password:  cfg.Password,
-		Transport: &http.Transport{
-			TLSClientConfig: tlsClientConfig,
-		},
+		Transport: newHTTPTransport(tlsClientConfig),
 	})
 	if err != nil {
 		return nil, err
@@ -63,7 +58,7 @@ type OpenSearch struct {
 	cfg    *OpenSearchConfig
 }
 
-var osRegex = regexp.MustCompile(`(?s){(.*)}`)
+var osRegex = regexp.MustCompile(`{([^{}]*)}`)
 
 func osFormatIndexName(pattern string, when time.Time) string {
 	m := osRegex.FindAllStringSubmatchIndex(pattern, -1)
@@ -131,15 +126,7 @@ func (e *OpenSearch) Send(ctx context.Context, ev *kube.EnhancedEvent) error {
 		return err
 	}
 
-	defer resp.Body.Close()
-	if resp.StatusCode > 399 {
-		rb, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return err
-		}
-		log.Error().Msgf("Indexing failed: %s", string(rb))
-	}
-	return nil
+	return handleIndexResponse(resp.StatusCode, resp.Body, index)
 }
 
 func (e *OpenSearch) Close() {
