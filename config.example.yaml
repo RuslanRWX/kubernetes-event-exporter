@@ -129,6 +129,6 @@ receivers:
       tag: "kube-event"
       bufferSize: 1048576
       # If set to true, all dots in labels and annotation keys are replaced by underscores. Defaults false
-      deDot: true|false
+      deDot: false
       layout: # Optional
 

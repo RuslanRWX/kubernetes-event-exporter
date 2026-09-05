@@ -17,6 +17,7 @@ import (
 type Store struct {
 	EventsProcessed      prometheus.Counter
 	EventsDiscarded      prometheus.Counter
+	EventsDropped        prometheus.Counter
 	WatchErrors          prometheus.Counter
 	SendErrors           prometheus.Counter
 	BuildInfo            prometheus.GaugeFunc
@@ -113,6 +114,10 @@ func NewMetricsStore(name_prefix string) *Store {
 			Name: name_prefix + "events_discarded",
 			Help: "The total number of events discarded because of being older than the maxEventAgeSeconds specified",
 		}),
+		EventsDropped: promauto.NewCounter(prometheus.CounterOpts{
+			Name: name_prefix + "events_dropped",
+			Help: "The total number of events dropped because the receiver queue was full",
+		}),
 		WatchErrors: promauto.NewCounter(prometheus.CounterOpts{
 			Name: name_prefix + "watch_errors",
 			Help: "The total number of errors received from the informer",
@@ -135,6 +140,7 @@ func NewMetricsStore(name_prefix string) *Store {
 func DestroyMetricsStore(store *Store) {
 	prometheus.Unregister(store.EventsProcessed)
 	prometheus.Unregister(store.EventsDiscarded)
+	prometheus.Unregister(store.EventsDropped)
 	prometheus.Unregister(store.WatchErrors)
 	prometheus.Unregister(store.SendErrors)
 	prometheus.Unregister(store.BuildInfo)

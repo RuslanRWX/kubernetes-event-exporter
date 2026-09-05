@@ -2,8 +2,20 @@
 build: tidy ## Build the CLI
 	go build
 
+IMAGE ?= ruslanrwx/kubernetes-event-exporter
+VERSION ?= $(shell git describe --tags --always --dirty)
+
 build-image: ## Build the Docker image
-	docker build -t kubernetes-event-exporter .
+	docker build --platform linux/amd64 --build-arg VERSION=$(VERSION) \
+		-t $(IMAGE):$(VERSION) -t $(IMAGE):latest .
+
+.PHONY: image-push
+image-push: build-image ## Build, push, and print the digest to pin in deploy/02-deployment.yaml
+	docker push $(IMAGE):$(VERSION)
+	docker push $(IMAGE):latest
+	@echo
+	@echo "Pin this in deploy/02-deployment.yaml:"
+	@docker inspect --format='  image: $(IMAGE):$(VERSION)@{{index (split (index .RepoDigests 0) "@") 1}}' $(IMAGE):$(VERSION)
 
 .PHONY: fmt
 fmt: ## Run go fmt against code

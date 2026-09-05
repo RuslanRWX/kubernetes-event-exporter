@@ -64,7 +64,9 @@ func main() {
 
 	cfg.SetDefaults()
 
-	log.Info().Msgf("Starting with config: %#v", cfg)
+	// Never log cfg directly: os.ExpandEnv above has already substituted sink
+	// credentials into it, and this line goes to stdout / the cluster log pipeline.
+	log.Debug().Msgf("Starting with config:\n%s", setup.RedactedConfigString(&cfg))
 
 	if err := cfg.Validate(); err != nil {
 		log.Fatal().Err(err).Msg("config validation failed")

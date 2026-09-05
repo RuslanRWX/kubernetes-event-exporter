@@ -1,0 +1,76 @@
+# Ships Kubernetes Events to the same OpenSearch that fluent-bit sends container
+# logs to (http://10.0.0.8:9200), using the same daily-index and cluster-tag
+# conventions so events and logs correlate:
+#
+#   fluent-bit  ->  logs-k8s2-YYYY.MM.DD    (record: cluster=k8s2)
+#   this        ->  events-k8s2-YYYY.MM.DD  (field:  clusterName=k8s2)
+#
+# Apply with:  kubectl apply -f deploy/01-config-opensearch.yaml
+# (this replaces the stdout reference ConfigMap in 01-config.yaml)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: event-exporter-cfg
+  namespace: monitoring
+data:
+  config.yaml: |
+    logLevel: info
+    logFormat: json
+    metricsNamePrefix: event_exporter_
+
+    # Mirrors fluent-bit's `record_modifier: cluster k8s2`, so old- and
+    # new-cluster documents stay distinguishable if indices are ever merged.
+    clusterName: k8s2
+
+    # Only forward events seen in the last minute. On start-up the informer
+    # replays every Event still in etcd (default TTL 1h); without this the
+    # exporter would re-ship an hour of history on every restart.
+    maxEventAgeSeconds: 60
+
+    # Enrichment (labels/annotations/ownerReferences of the involvedObject)
+    # costs one API GET per uncached object. The cache is keyed by
+    # UID/resourceVersion, so size it well above the number of distinct objects
+    # that generate events.
+    cacheSize: 4096
+    omitLookup: false
+
+    kubeQPS: 60
+    kubeBurst: 60
+
+    # Set replicas > 1 in the Deployment only together with this, otherwise
+    # every replica ships every event.
+    leaderElection:
+      enabled: false
+
+    route:
+      routes:
+        - match:
+            - receiver: "opensearch"
+
+    receivers:
+      - name: "opensearch"
+        opensearch:
+          hosts:
+            - "http://10.0.0.8:9200"
+          # Go time layout inside the braces -> events-k8s2-2026.09.05
+          indexFormat: "events-k8s2-{2006.01.02}"
+          # Index under the event UID so a restart re-listing the same events
+          # overwrites instead of creating duplicates.
+          useEventID: true
+          # Equivalent of fluent-bit's `Replace_Dots On`: label and annotation
+          # keys such as app.kubernetes.io/name would otherwise be interpreted
+          # by OpenSearch's dynamic mapping as nested object paths and collide.
+          deDot: true
+
+          # OpenSearch at 10.0.0.8:9200 currently accepts unauthenticated plain
+          # HTTP. Both this exporter and fluent-bit therefore ship cluster
+          # metadata in cleartext to anyone on the network path. When you turn
+          # the security plugin on, switch the host to https:// and uncomment:
+          #
+          # username: "${OPENSEARCH_USERNAME}"
+          # password: "${OPENSEARCH_PASSWORD}"
+          #
+          # ...sourcing both from a Secret via env vars in the Deployment
+          # (the config file is passed through os.ExpandEnv at start-up).
+          # tls:
+          #   caFile: /etc/opensearch/ca.crt

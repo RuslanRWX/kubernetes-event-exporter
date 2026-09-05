@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"regexp"
 	"strings"
@@ -14,7 +13,6 @@ import (
 	"github.com/elastic/go-elasticsearch/v7"
 	"github.com/elastic/go-elasticsearch/v7/esapi"
 	"github.com/resmoio/kubernetes-event-exporter/pkg/kube"
-	"github.com/rs/zerolog/log"
 )
 
 type ElasticsearchConfig struct {
@@ -57,9 +55,7 @@ func NewElasticsearch(cfg *ElasticsearchConfig) (*Elasticsearch, error) {
 		Header:    header,
 		CloudID:   cfg.CloudID,
 		APIKey:    cfg.APIKey,
-		Transport: &http.Transport{
-			TLSClientConfig: tlsClientConfig,
-		},
+		Transport: newHTTPTransport(tlsClientConfig),
 	})
 	if err != nil {
 		return nil, err
@@ -76,7 +72,7 @@ type Elasticsearch struct {
 	cfg    *ElasticsearchConfig
 }
 
-var regex = regexp.MustCompile(`(?s){(.*)}`)
+var regex = regexp.MustCompile(`{([^{}]*)}`)
 
 func formatIndexName(pattern string, when time.Time) string {
 	m := regex.FindAllStringSubmatchIndex(pattern, -1)
@@ -144,15 +140,7 @@ func (e *Elasticsearch) Send(ctx context.Context, ev *kube.EnhancedEvent) error 
 		return err
 	}
 
-	defer resp.Body.Close()
-	if resp.StatusCode > 399 {
-		rb, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return err
-		}
-		log.Error().Msgf("Indexing failed: %s", string(rb))
-	}
-	return nil
+	return handleIndexResponse(resp.StatusCode, resp.Body, index)
 }
 
 func (e *Elasticsearch) Close() {
